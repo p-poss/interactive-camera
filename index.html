@@ -919,32 +919,95 @@
 
         // Initialize camera
         async function startCamera() {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
+            // Try with ideal constraints first, then fall back to basic constraints
+            const constraints = [
+                {
                     video: {
                         width: { ideal: 1920 },
                         height: { ideal: 1080 },
                         facingMode: facingMode
                     }
-                });
+                },
+                {
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: facingMode
+                    }
+                },
+                {
+                    video: {
+                        facingMode: facingMode
+                    }
+                },
+                {
+                    video: true
+                }
+            ];
 
-                video.srcObject = stream;
-                video.style.display = 'block';
-                startContainer.classList.add('hidden');
-                statusDot.classList.add('live');
-                statusText.textContent = 'Live';
+            let lastError = null;
 
-                video.onloadedmetadata = () => {
+            for (const constraint of constraints) {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia(constraint);
+
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    
+                    // Wait for video to be ready before hiding start button
+                    await new Promise((resolve, reject) => {
+                        video.onloadedmetadata = () => {
+                            video.play().then(resolve).catch(reject);
+                        };
+                        video.onerror = reject;
+                        // Timeout after 5 seconds
+                        setTimeout(() => reject(new Error('Video load timeout')), 5000);
+                    });
+
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
                     document.getElementById('res-value').textContent =
                         `${video.videoWidth}×${video.videoHeight}`;
                     cameraActive = true;
-                };
-            } catch (err) {
-                console.error('Camera access denied:', err);
-                alert('Camera access is required for this application.');
+                    
+                    startContainer.classList.add('hidden');
+                    statusDot.classList.add('live');
+                    statusText.textContent = 'Live';
+                    
+                    return; // Success, exit the function
+                } catch (err) {
+                    lastError = err;
+                    console.warn('Camera constraint failed:', constraint, err);
+                    // Stop any partial stream before trying next constraint
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                        stream = null;
+                    }
+                    continue; // Try next constraint
+                }
             }
+
+            // All constraints failed
+            console.error('All camera constraints failed:', lastError);
+            
+            // Provide specific error messages
+            let message = 'Unable to access camera. ';
+            if (lastError) {
+                if (lastError.name === 'NotAllowedError' || lastError.name === 'PermissionDeniedError') {
+                    message += 'Please grant camera permission in your browser settings and try again.';
+                } else if (lastError.name === 'NotFoundError' || lastError.name === 'DevicesNotFoundError') {
+                    message += 'No camera found on this device.';
+                } else if (lastError.name === 'NotReadableError' || lastError.name === 'TrackStartError') {
+                    message += 'Camera may be in use by another application.';
+                } else if (lastError.name === 'OverconstrainedError') {
+                    message += 'Camera does not support the requested settings.';
+                } else {
+                    message += 'Please check your camera and permissions.';
+                }
+            }
+            
+            statusText.textContent = 'Error';
+            alert(message);
         }
 
         // Start on load
