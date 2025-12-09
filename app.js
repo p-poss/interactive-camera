@@ -1,8 +1,9 @@
 // State
 let stream = null;
 let cameraActive = false;
-let currentEffect = 'normal';
+let currentEffect = 'ascii';
 let accentColor = { r: 0, g: 122, b: 255 };
+let baseHue = 210; // Default blue hue
 let intensity = 100;
 let brightness = 100;
 let contrast = 100;
@@ -13,6 +14,17 @@ let fps = 0;
 let facingMode = 'user';
 let panelOpen = false;
 let noiseTime = 0;
+
+// Interactive features state
+let colorShiftEnabled = false;
+let blinkInvertEnabled = false;
+let faceDetector = null;
+let headTiltAngle = 0;
+
+// Blink detection state
+let blinkCooldown = false;
+let lastEAR = 1;
+let eyesWereClosed = false;
 
 // Elements
 const video = document.getElementById('video-feed');
@@ -457,6 +469,217 @@ document.getElementById('contrast').addEventListener('input', (e) => {
     document.getElementById('contrast-value').textContent = contrast + '%';
 });
 
+// Interactive toggles
+document.getElementById('color-shift-btn').addEventListener('click', async () => {
+    colorShiftEnabled = !colorShiftEnabled;
+    document.getElementById('color-shift-btn').classList.toggle('active', colorShiftEnabled);
+
+    if (colorShiftEnabled && !faceDetector) {
+        await initFaceDetection();
+    }
+});
+
+document.getElementById('blink-invert-btn').addEventListener('click', async () => {
+    blinkInvertEnabled = !blinkInvertEnabled;
+    document.getElementById('blink-invert-btn').classList.toggle('active', blinkInvertEnabled);
+
+    if (blinkInvertEnabled && !faceDetector) {
+        await initFaceDetection();
+    }
+});
+
+// Face mesh initialization
+let faceMeshReady = false;
+
+async function initFaceDetection() {
+    if (typeof FaceMesh === 'undefined') {
+        console.warn('MediaPipe Face Mesh not loaded');
+        return;
+    }
+
+    try {
+        faceDetector = new FaceMesh({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+
+        faceDetector.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        faceDetector.onResults((results) => {
+            faceMeshReady = true;
+            onFaceResults(results);
+        });
+
+        console.log('Face mesh initialized, waiting for first detection...');
+    } catch (err) {
+        console.error('Failed to initialize face mesh:', err);
+        faceDetector = null;
+    }
+}
+
+// Process face mesh results
+function onFaceResults(results) {
+    if (!colorShiftEnabled && !blinkInvertEnabled) return;
+
+    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
+
+        // Head tilt detection using eye positions
+        if (colorShiftEnabled) {
+            // Use eye corners for tilt: left eye outer (263), right eye outer (33)
+            const leftEyeOuter = landmarks[263];
+            const rightEyeOuter = landmarks[33];
+
+            const deltaY = leftEyeOuter.y - rightEyeOuter.y;
+            const deltaX = leftEyeOuter.x - rightEyeOuter.x;
+            const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+
+            headTiltAngle = headTiltAngle * 0.7 + angle * 0.3;
+
+            // Require more tilt (-60 to +60 degrees) to reach full color range
+            const normalizedTilt = Math.max(-60, Math.min(60, headTiltAngle));
+            const hue = ((normalizedTilt + 60) / 120) * 360;
+
+            updateAccentColorFromHue(hue);
+        }
+
+        // Blink detection using Eye Aspect Ratio (EAR)
+        if (blinkInvertEnabled) {
+            detectBlinkEAR(landmarks);
+        }
+    }
+}
+
+// Calculate Eye Aspect Ratio (EAR) for blink detection
+function calculateEAR(landmarks, eyeIndices) {
+    // eyeIndices: [p1, p2, p3, p4, p5, p6] - points around the eye
+    // EAR = (|p2-p6| + |p3-p5|) / (2 * |p1-p4|)
+    const p1 = landmarks[eyeIndices[0]];
+    const p2 = landmarks[eyeIndices[1]];
+    const p3 = landmarks[eyeIndices[2]];
+    const p4 = landmarks[eyeIndices[3]];
+    const p5 = landmarks[eyeIndices[4]];
+    const p6 = landmarks[eyeIndices[5]];
+
+    const vertical1 = Math.sqrt(Math.pow(p2.x - p6.x, 2) + Math.pow(p2.y - p6.y, 2));
+    const vertical2 = Math.sqrt(Math.pow(p3.x - p5.x, 2) + Math.pow(p3.y - p5.y, 2));
+    const horizontal = Math.sqrt(Math.pow(p1.x - p4.x, 2) + Math.pow(p1.y - p4.y, 2));
+
+    if (horizontal === 0) return 1;
+    return (vertical1 + vertical2) / (2 * horizontal);
+}
+
+// Detect blinks using Eye Aspect Ratio
+function detectBlinkEAR(landmarks) {
+    if (blinkCooldown) return;
+
+    // Face Mesh eye landmark indices for EAR calculation
+    // Right eye: outer corner(33), top(159), top(158), inner corner(133), bottom(153), bottom(145)
+    // Left eye: inner corner(362), top(386), top(385), outer corner(263), bottom(380), bottom(374)
+    const rightEyeIndices = [33, 159, 158, 133, 153, 145];
+    const leftEyeIndices = [362, 386, 385, 263, 380, 374];
+
+    const rightEAR = calculateEAR(landmarks, rightEyeIndices);
+    const leftEAR = calculateEAR(landmarks, leftEyeIndices);
+    const avgEAR = (rightEAR + leftEAR) / 2;
+
+    // Higher threshold = more sensitive (0.25 catches more blinks)
+    const EAR_THRESHOLD = 0.25;
+
+    if (avgEAR < EAR_THRESHOLD && lastEAR >= EAR_THRESHOLD) {
+        // Eyes just closed - trigger immediately on the closing edge
+        invertAccentColor();
+        blinkCooldown = true;
+        setTimeout(() => { blinkCooldown = false; }, 400);
+    }
+
+    lastEAR = avgEAR;
+}
+
+// Invert the accent color
+function invertAccentColor() {
+    accentColor = {
+        r: 255 - accentColor.r,
+        g: 255 - accentColor.g,
+        b: 255 - accentColor.b
+    };
+
+    // Update color bar UI
+    const hex = `#${accentColor.r.toString(16).padStart(2, '0')}${accentColor.g.toString(16).padStart(2, '0')}${accentColor.b.toString(16).padStart(2, '0')}`;
+    colorBar.style.background = hex;
+    colorHex.textContent = hex.toUpperCase();
+    colorInput.value = hex;
+
+    const luminance = getLuminance(accentColor.r, accentColor.g, accentColor.b);
+    const textColor = luminance > 0.5 ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.95)';
+    const iconBg = luminance > 0.5 ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.25)';
+    colorBar.style.color = textColor;
+    colorBar.querySelector('.color-bar-icon').style.background = iconBg;
+    colorBar.querySelector('.color-bar-icon svg').style.fill = textColor;
+}
+
+// Convert HSL hue to RGB and update accent color
+function updateAccentColorFromHue(hue) {
+    const s = 1.0; // Full saturation
+    const l = 0.5; // Medium lightness
+
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((hue / 60) % 2 - 1));
+    const m = l - c / 2;
+
+    let r, g, b;
+    if (hue < 60) { r = c; g = x; b = 0; }
+    else if (hue < 120) { r = x; g = c; b = 0; }
+    else if (hue < 180) { r = 0; g = c; b = x; }
+    else if (hue < 240) { r = 0; g = x; b = c; }
+    else if (hue < 300) { r = x; g = 0; b = c; }
+    else { r = c; g = 0; b = x; }
+
+    accentColor = {
+        r: Math.round((r + m) * 255),
+        g: Math.round((g + m) * 255),
+        b: Math.round((b + m) * 255)
+    };
+
+    // Update color bar UI
+    const hex = `#${accentColor.r.toString(16).padStart(2, '0')}${accentColor.g.toString(16).padStart(2, '0')}${accentColor.b.toString(16).padStart(2, '0')}`;
+    colorBar.style.background = hex;
+    colorHex.textContent = hex.toUpperCase();
+    colorInput.value = hex;
+
+    const luminance = getLuminance(accentColor.r, accentColor.g, accentColor.b);
+    const textColor = luminance > 0.5 ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.95)';
+    const iconBg = luminance > 0.5 ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.25)';
+    colorBar.style.color = textColor;
+    colorBar.querySelector('.color-bar-icon').style.background = iconBg;
+    colorBar.querySelector('.color-bar-icon svg').style.fill = textColor;
+}
+
+// Run face detection on video frame
+let faceDetectionPending = false;
+
+async function runFaceDetection() {
+    if ((!colorShiftEnabled && !blinkInvertEnabled) || !faceDetector || !cameraActive || video.readyState < 2) {
+        return;
+    }
+
+    // Prevent overlapping detections
+    if (faceDetectionPending) return;
+    faceDetectionPending = true;
+
+    try {
+        await faceDetector.send({ image: video });
+    } catch (err) {
+        console.error('Face detection error:', err);
+    } finally {
+        faceDetectionPending = false;
+    }
+}
+
 // Capture button
 document.getElementById('capture-btn').addEventListener('click', () => {
     const flash = document.getElementById('capture-flash');
@@ -493,6 +716,11 @@ function processFrame() {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         }
         ctx.restore();
+
+        // Run face detection for interactive features (every frame for responsiveness)
+        if (colorShiftEnabled || blinkInvertEnabled) {
+            runFaceDetection();
+        }
     } else {
         generateNoise();
     }
@@ -518,7 +746,6 @@ function processFrame() {
 
     // Apply effect
     switch (currentEffect) {
-        case 'pixelate': applyPixelate(); break;
         case 'edge': applyEdgeDetection(); break;
         case 'ascii': applyAscii(); break;
     }
@@ -528,20 +755,6 @@ function processFrame() {
 
 function clamp(val) {
     return Math.max(0, Math.min(255, val));
-}
-
-function applyPixelate() {
-    const size = Math.max(2, Math.floor(2 + (intensity / 100) * 30));
-
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCanvas.width = Math.ceil(canvas.width / size);
-    tempCanvas.height = Math.ceil(canvas.height / size);
-
-    tempCtx.drawImage(canvas, 0, 0, tempCanvas.width, tempCanvas.height);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
-    ctx.imageSmoothingEnabled = true;
 }
 
 function applyEdgeDetection() {
