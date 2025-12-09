@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Patrick Poss — Camera Effects</title>
-    <meta name="description" content="Interactive real-time camera effects and filters. Apply aura, thermal, glitch, pixelate, edge detection, ASCII, and kaleidoscope effects to your webcam feed with customizable settings.">
+    <meta name="description" content="Interactive real-time camera effects and filters. Apply pixelate, edge detection, and ASCII effects to your webcam feed with customizable blur, brightness, and contrast settings.">
     <meta name="keywords" content="camera effects, webcam filters, real-time video effects, interactive camera, visual effects, video filters, web camera, creative tools">
     <meta name="author" content="Patrick Poss">
 
@@ -68,18 +68,6 @@
                         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
                         Normal
                     </button>
-                    <button class="effect-btn" data-effect="aura">
-                        <svg viewBox="0 0 24 24"><path d="M12 3v18m9-9H3m15.364-6.364L5.636 18.364m12.728 0L5.636 5.636"/></svg>
-                        Aura
-                    </button>
-                    <button class="effect-btn" data-effect="thermal">
-                        <svg viewBox="0 0 24 24"><path d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        Thermal
-                    </button>
-                    <button class="effect-btn" data-effect="glitch">
-                        <svg viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                        Glitch
-                    </button>
                     <button class="effect-btn" data-effect="pixelate">
                         <svg viewBox="0 0 24 24"><path d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></svg>
                         Pixel
@@ -92,10 +80,6 @@
                         <svg viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
                         ASCII
                     </button>
-                    <button class="effect-btn" data-effect="mirror">
-                        <svg viewBox="0 0 24 24"><path d="M12 3l9 4.5v9L12 21l-9-4.5v-9L12 3z"/></svg>
-                        Kaleid
-                    </button>
                 </div>
             </div>
 
@@ -107,9 +91,9 @@
                     <div class="slider-item">
                         <div class="slider-header">
                             <span class="slider-label">Intensity</span>
-                            <span class="slider-value" id="intensity-value">50%</span>
+                            <span class="slider-value" id="intensity-value">100%</span>
                         </div>
-                        <input type="range" id="intensity" min="0" max="100" value="50">
+                        <input type="range" id="intensity" min="0" max="100" value="100">
                     </div>
                     <div class="slider-item">
                         <div class="slider-header">

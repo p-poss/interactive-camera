@@ -3,7 +3,7 @@ let stream = null;
 let cameraActive = false;
 let currentEffect = 'normal';
 let accentColor = { r: 0, g: 122, b: 255 };
-let intensity = 50;
+let intensity = 100;
 let brightness = 100;
 let contrast = 100;
 let frameCount = 0;
@@ -518,13 +518,9 @@ function processFrame() {
 
     // Apply effect
     switch (currentEffect) {
-        case 'aura': applyAura(); break;
-        case 'thermal': applyThermal(); break;
-        case 'glitch': applyGlitch(); break;
         case 'pixelate': applyPixelate(); break;
         case 'edge': applyEdgeDetection(); break;
         case 'ascii': applyAscii(); break;
-        case 'mirror': applyKaleidoscope(); break;
     }
 
     requestAnimationFrame(processFrame);
@@ -532,87 +528,6 @@ function processFrame() {
 
 function clamp(val) {
     return Math.max(0, Math.min(255, val));
-}
-
-function applyAura() {
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    const strength = intensity / 100;
-
-    for (let i = 0; i < data.length; i += 4) {
-        const luminance = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
-        const auraStrength = Math.pow(luminance, 2) * strength;
-
-        data[i] = clamp(data[i] + accentColor.r * auraStrength * 0.5);
-        data[i + 1] = clamp(data[i + 1] + accentColor.g * auraStrength * 0.5);
-        data[i + 2] = clamp(data[i + 2] + accentColor.b * auraStrength * 0.5);
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-
-    ctx.globalCompositeOperation = 'screen';
-    ctx.fillStyle = `rgba(${accentColor.r}, ${accentColor.g}, ${accentColor.b}, ${0.1 * strength})`;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.globalCompositeOperation = 'source-over';
-}
-
-function applyThermal() {
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    const strength = intensity / 100;
-
-    for (let i = 0; i < data.length; i += 4) {
-        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        const normalized = avg / 255;
-
-        let r, g, b;
-        if (normalized < 0.25) {
-            r = 0; g = normalized * 4 * 255; b = 255;
-        } else if (normalized < 0.5) {
-            r = 0; g = 255; b = (1 - (normalized - 0.25) * 4) * 255;
-        } else if (normalized < 0.75) {
-            r = (normalized - 0.5) * 4 * 255; g = 255; b = 0;
-        } else {
-            r = 255; g = (1 - (normalized - 0.75) * 4) * 255; b = 0;
-        }
-
-        data[i] = clamp(data[i] * (1 - strength) + r * strength);
-        data[i + 1] = clamp(data[i + 1] * (1 - strength) + g * strength);
-        data[i + 2] = clamp(data[i + 2] * (1 - strength) + b * strength);
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-}
-
-function applyGlitch() {
-    const strength = intensity / 100;
-    const sliceCount = Math.floor(5 + strength * 15);
-
-    for (let i = 0; i < sliceCount; i++) {
-        if (Math.random() > 0.7) {
-            const y = Math.random() * canvas.height;
-            const height = Math.random() * 30 + 5;
-            const offset = (Math.random() - 0.5) * 50 * strength;
-
-            const slice = ctx.getImageData(0, y, canvas.width, height);
-            ctx.putImageData(slice, offset, y);
-        }
-    }
-
-    if (Math.random() > 0.5) {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-        const shift = Math.floor(strength * 10);
-
-        for (let y = 0; y < canvas.height; y++) {
-            for (let x = 0; x < canvas.width; x++) {
-                const i = (y * canvas.width + x) * 4;
-                const shiftedI = (y * canvas.width + Math.min(x + shift, canvas.width - 1)) * 4;
-                data[i] = data[shiftedI];
-            }
-        }
-        ctx.putImageData(imageData, 0, 0);
-    }
 }
 
 function applyPixelate() {
@@ -704,43 +619,4 @@ function applyAscii() {
             ctx.fillText(chars[charIndex], x * fontSize, y * fontSize);
         }
     }
-}
-
-function applyKaleidoscope() {
-    const segments = Math.max(4, Math.floor(4 + (intensity / 100) * 12));
-    const angleStep = (Math.PI * 2) / segments;
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCanvas.width = canvas.width;
-    tempCanvas.height = canvas.height;
-    tempCtx.drawImage(canvas, 0, 0);
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    for (let i = 0; i < segments; i++) {
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(angleStep * i);
-
-        if (i % 2 === 1) {
-            ctx.scale(-1, 1);
-        }
-
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.arc(0, 0, Math.max(cx, cy) * 1.5, -angleStep / 2, angleStep / 2);
-        ctx.closePath();
-        ctx.clip();
-
-        ctx.drawImage(tempCanvas, -cx, -cy);
-        ctx.restore();
-    }
-
-    ctx.globalCompositeOperation = 'overlay';
-    ctx.fillStyle = `rgba(${accentColor.r}, ${accentColor.g}, ${accentColor.b}, 0.1)`;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.globalCompositeOperation = 'source-over';
 }
